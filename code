@@ -1,0 +1,49 @@
+import os
+import wikipedia
+import speech_recognition as sr
+from telegram.ext import Updater, MessageHandler, Filters
+
+# Set up the Telegram bot and SpeechRecognition API client
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+r = sr.Recognizer()
+bot = Updater(BOT_TOKEN)
+
+# Define the handler function for voice messages
+def voice_handler(update, context):
+    chat_id = update.effective_chat.id
+    message = update.message
+
+    # Download the voice message file and create an AudioFile object
+    voice = message.voice.get_file()
+    voice_file = voice.download()
+    with sr.AudioFile(voice_file) as source:
+        audio_data = r.record(source)
+
+    # Use SpeechRecognition to transcribe the audio and extract the query text
+    try:
+        query = r.recognize_google(audio_data)
+    except sr.UnknownValueError:
+        bot.send_message(chat_id=chat_id, text="Sorry, I couldn't understand your voice message :(")
+        return
+    except sr.RequestError:
+        bot.send_message(chat_id=chat_id, text="Sorry, something went wrong with my speech recognition :(")
+        return
+    
+    # Use the Wikipedia API to search for information based on the query
+    try:
+        page = wikipedia.page(query)
+        summary = wikipedia.summary(query)
+        message_text = f"{page.title}\n\n{summary}\n\n{page.url}"
+        bot.send_message(chat_id=chat_id, text=message_text)
+    except wikipedia.exceptions.PageError:
+        bot.send_message(chat_id=chat_id, text="Sorry, I couldn't find any information on that topic :(")
+    except wikipedia.exceptions.DisambiguationError as e:
+        options = "\n".join(e.options[:5])
+        message_text = f"Sorry, I'm not sure which topic you meant. Did you mean one of these?\n\n{options}"
+        bot.send_message(chat_id=chat_id, text=message_text)
+
+# Set up the message handler for voice messages
+bot.dispatcher.add_handler(MessageHandler(Filters.voice, voice_handler))
+
+# Start the bot
+bot.start_polling()
